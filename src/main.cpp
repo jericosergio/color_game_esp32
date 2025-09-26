@@ -75,18 +75,18 @@ void showSelect(uint8_t caret);
 // ===== Helpers: drawing =====
 void drawBox(int x,int y,int w,int h){ display.drawRect(x,y,w,h,SH110X_WHITE); }
 
-void drawCenteredText(const char* txt, int y){
+void drawCenteredText(const char* txt, int y, uint16_t fg=SH110X_BLACK, uint16_t bg=SH110X_WHITE){
   int16_t x1,y1; uint16_t tw,th;
-  display.setTextSize(1); display.setTextColor(SH110X_BLACK, SH110X_WHITE); // black on white if bg filled
+  display.setTextSize(1); display.setTextColor(fg, bg);
   display.getTextBounds(txt,0,0,&x1,&y1,&tw,&th);
   int tx = (SCREEN_WIDTH - (int)tw)/2; if (tx < 0) tx = 0;
   display.setCursor(tx, y);
   display.print(txt);
 }
 
-void drawCenteredTextInRect(int x,int y,int w,int h,const char* text){
+void drawCenteredTextInRect(int x,int y,int w,int h,const char* text, uint16_t fg=SH110X_WHITE, uint16_t bg=SH110X_BLACK){
   int16_t x1,y1; uint16_t tw,th;
-  display.setTextSize(1); display.setTextColor(SH110X_WHITE);
+  display.setTextSize(1); display.setTextColor(fg, bg);
   display.getTextBounds(text,0,0,&x1,&y1,&tw,&th);
   int tx = x + (w - (int)tw)/2; if(tx < x+1) tx = x+1;
   int ty = y + (h - (int)th)/2; if(ty < y+1) ty = y+1;
@@ -103,9 +103,10 @@ void drawHeader(){
 }
 
 // Dice graphics (with correct "6" as 3 columns x 2 rows)
-void drawDie(int x,int y,int s,int face){
-  int r=3; display.drawRoundRect(x,y,s,s,r,SH110X_WHITE);
-  auto pip=[&](int px,int py){ display.fillCircle(px,py,2,SH110X_WHITE); };
+// Color parameter for lines/pips so we can draw black on white in overlay.
+void drawDieColored(int x,int y,int s,int face, uint16_t col){
+  int r=3; display.drawRoundRect(x,y,s,s,r,col);
+  auto pip=[&](int px,int py){ display.fillCircle(px,py,2,col); };
 
   int cx=x+s/2, cy=y+s/2;
   int dx=s/4, dy=s/4;
@@ -118,14 +119,11 @@ void drawDie(int x,int y,int s,int face){
     case 3: pip(lx,ty); pip(cx,cy); pip(rx,by); break;
     case 4: pip(lx,ty); pip(rx,ty); pip(lx,by); pip(rx,by); break;
     case 5: pip(lx,ty); pip(rx,ty); pip(cx,cy); pip(lx,by); pip(rx,by); break;
-    case 6: // three columns (left, center, right) × two rows (top, bottom)
-            pip(lx,ty); pip(lx,by);
-            pip(mx,ty); pip(mx,by);
-            pip(rx,ty); pip(rx,by);
-            break;
+    case 6: pip(lx,ty); pip(lx,by); pip(mx,ty); pip(mx,by); pip(rx,ty); pip(rx,by); break;
     default: break;
   }
 }
+inline void drawDie(int x,int y,int s,int face){ drawDieColored(x,y,s,face, SH110X_WHITE); }
 
 // ===== Screens =====
 void showStartup(){
@@ -172,9 +170,9 @@ void renderRollingOrFinal(bool final=false){
     drawBox(TOP_X1, TOP_Y, TOP_W, BOX_H);
     drawBox(TOP_X2, TOP_Y, TOP_W, BOX_H);
     drawBox(BOT_X,  BOT_Y, BOT_W, BOX_H);
-    drawCenteredTextInRect(TOP_X1, TOP_Y, TOP_W, BOX_H, COLORS[rA]);
-    drawCenteredTextInRect(TOP_X2, TOP_Y, TOP_W, BOX_H, COLORS[rB]);
-    drawCenteredTextInRect(BOT_X , BOT_Y, BOT_W, BOX_H, COLORS[rC]);
+    drawCenteredTextInRect(TOP_X1, TOP_Y, TOP_W, BOX_H, COLORS[rA], SH110X_WHITE, SH110X_BLACK);
+    drawCenteredTextInRect(TOP_X2, TOP_Y, TOP_W, BOX_H, COLORS[rB], SH110X_WHITE, SH110X_BLACK);
+    drawCenteredTextInRect(BOT_X , BOT_Y, BOT_W, BOX_H, COLORS[rC], SH110X_WHITE, SH110X_BLACK);
   } else {
     // DICE mode: NO boxes, just dice centered in the same areas
     int sTop = 24; // fits visually in the top regions
@@ -222,23 +220,45 @@ bool buttonLongPressed(){                 // fires once per hold
   return false;
 }
 
-// ===== Inverted congratulations overlay (white screen, black text) =====
-void showCongratsOverlay(const char* resultStr){
-  // Fill whole screen white, then draw centered black text lines
+// ===== Inverted congratulations overlay rendered as REAL RESULT =====
+void showCongratsOverlayResult(){
+  // Fill screen white
   display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SH110X_WHITE);
 
-  // Title
-  const char* title = "CONGRATULATIONS!";
-  drawCenteredText(title, 20);
+  // Title (black on white)
+  drawCenteredText("CONGRATULATIONS!", 2, SH110X_BLACK, SH110X_WHITE);
 
-  // Result (like R|B|G or 3|5|1)
-  drawCenteredText(resultStr, 38);
+  // Reserve a small gap under title, then reuse same layout areas.
+  // NOTE: we do NOT draw header here.
+  if (mode == MODE_COLOR){
+    // draw black boxes + black labels on white
+    display.drawRect(TOP_X1, TOP_Y, TOP_W, BOX_H, SH110X_BLACK);
+    display.drawRect(TOP_X2, TOP_Y, TOP_W, BOX_H, SH110X_BLACK);
+    display.drawRect(BOT_X , BOT_Y, BOT_W, BOX_H, SH110X_BLACK);
+
+    drawCenteredTextInRect(TOP_X1, TOP_Y, TOP_W, BOX_H, COLORS[rA], SH110X_BLACK, SH110X_WHITE);
+    drawCenteredTextInRect(TOP_X2, TOP_Y, TOP_W, BOX_H, COLORS[rB], SH110X_BLACK, SH110X_WHITE);
+    drawCenteredTextInRect(BOT_X , BOT_Y, BOT_W, BOX_H, COLORS[rC], SH110X_BLACK, SH110X_WHITE);
+  } else {
+    // draw three black dice (no boxes) on white
+    int sTop = 24; int sBot = 26;
+    int dx1 = TOP_X1 + (TOP_W - sTop)/2;
+    int dy1 = TOP_Y  + (BOX_H - sTop)/2;
+    int dx2 = TOP_X2 + (TOP_W - sTop)/2;
+    int dy2 = TOP_Y  + (BOX_H - sTop)/2;
+    int dx3 = BOT_X  + (BOT_W - sBot)/2;
+    int dy3 = BOT_Y  + (BOX_H - sBot)/2;
+
+    drawDieColored(dx1, dy1, sTop, (int)rA, SH110X_BLACK);
+    drawDieColored(dx2, dy2, sTop, (int)rB, SH110X_BLACK);
+    drawDieColored(dx3, dy3, sBot, (int)rC, SH110X_BLACK);
+  }
 
   display.display();
 }
 
-void celebrateOverlay(const char* resultStr){
-  showCongratsOverlay(resultStr);
+void celebrateOverlayResult(){
+  showCongratsOverlayResult();
   for (int j=0; j<3; j++){
     digitalWrite(LED1, HIGH); digitalWrite(LED2, HIGH); digitalWrite(LED3, HIGH);
     buzzerOn(); delay(120);
@@ -251,23 +271,20 @@ void celebrateOverlay(const char* resultStr){
 void stopAndLock(){
   rolling = false;
 
-  // Build overlay result string and update header summary
-  char result[8] = {0}; // "X|Y|Z" fits
+  // Update header summary for next round
   if (mode == MODE_COLOR){
     lastA = colorInitialOf(rA);
     lastB = colorInitialOf(rB);
     lastC = colorInitialOf(rC);
-    snprintf(result, sizeof(result), "%c|%c|%c", lastA, lastB, lastC);
   } else {
     lastA = '0' + rA;
     lastB = '0' + rB;
     lastC = '0' + rC;
-    snprintf(result, sizeof(result), "%c|%c|%c", lastA, lastB, lastC);
   }
 
-  // Show final frame (momentary) then full inverted overlay with result
+  // (Optional) brief final frame; then full overlay result view
   renderRollingOrFinal(true);
-  celebrateOverlay(result);
+  celebrateOverlayResult();
 }
 
 void startRolling(){
@@ -345,7 +362,7 @@ void loop(){
       // start rolling
       startRolling();
     } else {
-      // manual stop overrides auto 7s: lock now + inverted overlay
+      // manual stop overrides auto 7s: lock now + overlay result
       stopAndLock();
     }
   }
@@ -362,7 +379,7 @@ void loop(){
       uint16_t step = (now - start < 800) ? 70 : 110;
       nextSpinMs = now + step;
     }
-    // Auto-stop after 7 seconds -> lock + inverted overlay
+    // Auto-stop after 7 seconds -> lock + overlay result
     if (now - rollingStartMs >= AUTO_LOCK_MS){
       stopAndLock();
     }
